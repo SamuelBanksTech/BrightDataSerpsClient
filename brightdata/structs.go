@@ -133,17 +133,26 @@ type BrightDataRedisOptions struct {
 	CacheExpiry time.Duration
 }
 
+type BrightDataMongoLogOptions struct {
+	MongoUrl   string
+	Database   string
+	Collection string
+}
+
 type BrightDataClientOptions struct {
-	LuminatiUrl   string
-	UseRedisCache bool
-	RedisOpts     BrightDataRedisOptions
+	LuminatiUrl     string
+	UseRedisCache   bool
+	RedisOpts       BrightDataRedisOptions
+	UseMongoLogging bool
+	MongoOpts       BrightDataMongoLogOptions
 }
 
 type BrightDataClient struct {
-	options    *BrightDataClientOptions
-	proxy      *url.URL
-	cache      *BDRedisClient
-	localCache *cache2.Cache
+	options     *BrightDataClientOptions
+	proxy       *url.URL
+	cache       *BDRedisClient
+	localCache  *cache2.Cache
+	mongoLogger *BDMongoClient
 }
 
 type SearchOptions struct {

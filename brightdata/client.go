@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"fmt"
 	cache2 "github.com/patrickmn/go-cache"
 	"io"
 	"log"
@@ -34,11 +33,17 @@ func NewClient(clientOptions BrightDataClientOptions) (*BrightDataClient, error)
 
 	localCache := cache2.New(30*time.Minute, 30*time.Minute)
 
+	var mongoclient *BDMongoClient
+	if clientOptions.UseMongoLogging {
+		mongoclient = NewBDMongoClient(&clientOptions.MongoOpts)
+	}
+
 	return &BrightDataClient{
-		options:    &clientOptions,
-		proxy:      parsedUrl,
-		cache:      cache,
-		localCache: localCache,
+		options:     &clientOptions,
+		proxy:       parsedUrl,
+		cache:       cache,
+		localCache:  localCache,
+		mongoLogger: mongoclient,
 	}, nil
 }
 
@@ -70,7 +75,6 @@ func (bdc *BrightDataClient) Search(search SearchOptions) (Serps, error) {
 
 	data, localfound := bdc.localCache.Get(bdc.getCacheKey(search))
 	if localfound {
-		fmt.Println("from local cache")
 		rawSerps = data.(brightDataResponse)
 	} else {
 
@@ -83,18 +87,15 @@ func (bdc *BrightDataClient) Search(search SearchOptions) (Serps, error) {
 		if bdc.options.UseRedisCache {
 			err = bdc.cache.RdsGet(bdc.getCacheKey(search), &rawSerps)
 			if err != nil {
-				fmt.Println("from live")
 				rawSerps, err = bdc.getRawSerps(search, processedKeyword)
 				if err != nil {
 					return serpsResponse, err
 				}
 			} else {
 				bdc.localCache.Set(bdc.getCacheKey(search), rawSerps, 30*time.Minute)
-				fmt.Println("from redis")
 			}
 
 		} else {
-			fmt.Println("from live")
 			rawSerps, err = bdc.getRawSerps(search, processedKeyword)
 			if err != nil {
 				return serpsResponse, err
@@ -122,6 +123,12 @@ func (bdc *BrightDataClient) Search(search SearchOptions) (Serps, error) {
 func (bdc *BrightDataClient) getRawSerps(search SearchOptions, processedKeyword string) (brightDataResponse, error) {
 
 	var rawSerps brightDataResponse
+	logData := make(map[string]string)
+
+	logData["CHECK_DOMAIN"] = search.CheckDomain
+	logData["KEYWORD"] = search.Keyword
+	logData["COUNTRY"] = search.Country
+	logData["PROCESSED_KEYWORD"] = processedKeyword
 
 	timeout := 1 * time.Minute
 
@@ -144,6 +151,7 @@ func (bdc *BrightDataClient) getRawSerps(search SearchOptions, processedKeyword 
 	}
 
 	googleUrl := "https://www.google.com/search?q=" + processedKeyword + "&lum_json=1&num=100&gl=" + search.Country + device
+	logData["QUERY"] = googleUrl
 
 	req, err := http.NewRequest("GET", googleUrl, nil)
 	if err != nil {
@@ -152,6 +160,14 @@ func (bdc *BrightDataClient) getRawSerps(search SearchOptions, processedKeyword 
 
 	resp, err := client.Do(req)
 	if err != nil {
+
+		logData["ERROR"] = err.Error()
+
+		bdc.mongoLogger.StoreLog(2, "ERROR CALLING BRIGHTDATA", logData)
+
+		log.Println("--------- ERROR CALLING BRIGHTDATA ---------")
+		log.Printf("%+v\n", logData)
+		log.Println("------------------------------------------")
 		return rawSerps, err
 	}
 	defer func(Body io.ReadCloser) {
@@ -165,21 +181,29 @@ func (bdc *BrightDataClient) getRawSerps(search SearchOptions, processedKeyword 
 	if err != nil {
 		return rawSerps, err
 	}
+	logData["BRIGHTDATA_BODY"] = string(bodyBytes)
 
 	err = json.Unmarshal(bodyBytes, &rawSerps)
 	if err != nil {
-		log.Println("--------- JSON FAILED : RAW BODY ---------")
-		log.Println("BODY:", string(bodyBytes))
-		log.Println("QUERY:", googleUrl)
-		log.Println("CHECK_DOMAIN:", search.CheckDomain)
-		log.Println("KEYWORD:", search.Keyword)
-		log.Println("PROCESSED_KEYWORD:", processedKeyword)
-		log.Println("COUNTRY:", search.Country)
+		logData["ERROR"] = err.Error()
+		bdc.mongoLogger.StoreLog(2, "JSON UNMARSHAL FAILED", logData)
+
+		log.Println("--------- JSON FAILED ---------")
+		log.Printf("%+v\n", logData)
 		log.Println("------------------------------------------")
+
 		return rawSerps, err
 	}
 
 	if len(rawSerps.Organic) < 1 {
+
+		logData["ERROR"] = ""
+		bdc.mongoLogger.StoreLog(2, "NO SERPS RESULTS FROM BRIGHTDATA", logData)
+
+		log.Println("--------- NO SERPS RESULTS FROM BRIGHTDATA ---------")
+		log.Printf("%+v\n", logData)
+		log.Println("------------------------------------------")
+
 		return rawSerps, errors.New("empty data returned from bright data : " + googleUrl)
 	}
 
