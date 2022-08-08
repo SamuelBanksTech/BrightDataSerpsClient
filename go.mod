@@ -1,4 +1,4 @@
-module luminati-client-2
+module github.com/SamuelBanksTech/BrightDataSerpsClient
 
 go 1.18
 
