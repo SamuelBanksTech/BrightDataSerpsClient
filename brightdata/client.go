@@ -101,6 +101,8 @@ func (bdc *BrightDataClient) Search(search SearchOptions) (Serps, error) {
 				return serpsResponse, err
 			}
 		}
+
+		serpsResponse.MetaData.WasLiveReq = true
 	}
 
 	features, featuresForUrl, err := bdc.featureMap(&rawSerps, search.CheckDomain)

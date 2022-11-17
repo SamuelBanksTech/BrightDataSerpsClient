@@ -140,11 +140,12 @@ type BrightDataMongoLogOptions struct {
 }
 
 type BrightDataClientOptions struct {
-	LuminatiUrl     string
-	UseRedisCache   bool
-	RedisOpts       BrightDataRedisOptions
-	UseMongoLogging bool
-	MongoOpts       BrightDataMongoLogOptions
+	LuminatiUrl        string
+	UseRedisCache      bool
+	RedisOpts          BrightDataRedisOptions
+	UseMongoLogging    bool
+	MongoOpts          BrightDataMongoLogOptions
+	UseRequestTracking bool
 }
 
 type BrightDataClient struct {
@@ -169,6 +170,11 @@ type (
 		Organic    []Organic `json:"serps"`
 		Features   []string  `json:"features"`
 		CheckedUrl Domain    `json:"checked_url"`
+		MetaData   Meta      `json:"meta_data"`
+	}
+
+	Meta struct {
+		WasLiveReq bool
 	}
 	// Domain are URL specific results returned by
 	// Serps.CheckURL
